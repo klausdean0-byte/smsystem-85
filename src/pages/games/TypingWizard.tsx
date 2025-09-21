@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { VirtualKeyboard } from "@/components/games/VirtualKeyboard";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+import { typingLessons, getUnlockedLessons, TypingLesson } from "@/data/typingLessons";
 import { 
   Play, 
   RotateCcw, 
@@ -16,37 +18,15 @@ import {
   Star,
   ArrowLeft,
   Volume2,
-  VolumeX
+  VolumeX,
+  Lock,
+  CheckCircle,
+  Keyboard,
+  BookOpen
 } from "lucide-react";
 import { toast } from "sonner";
 
-// Sample sentences for different levels
-const sentences = {
-  easy: [
-    "The cat sat on the mat.",
-    "I like to play games.",
-    "The sun is bright today.",
-    "We can learn new things.",
-    "Books are fun to read."
-  ],
-  medium: [
-    "Learning to type quickly takes practice.",
-    "The wizard cast a magical spell on the keyboard.",
-    "Children love playing educational games online.",
-    "Practice makes perfect when learning new skills.",
-    "Typing games help improve finger coordination."
-  ],
-  hard: [
-    "The magnificent wizard demonstrated extraordinary typing abilities.",
-    "Proficient typists can achieve remarkable speeds with consistent practice.",
-    "Advanced typing techniques require dedication and systematic training.",
-    "Exceptional keyboard skills develop through persistent daily exercises.",
-    "Mastering touch typing transforms written communication efficiency."
-  ]
-};
-
-type GameState = 'menu' | 'instructions' | 'playing' | 'results';
-type Difficulty = 'easy' | 'medium' | 'hard';
+type GameState = 'menu' | 'lesson-select' | 'instructions' | 'playing' | 'results';
 
 export default function TypingWizard() {
   const { userRole, userName, photoUrl, signOut } = useAuth();
@@ -56,8 +36,9 @@ export default function TypingWizard() {
   
   // Game state
   const [gameState, setGameState] = useState<GameState>('menu');
-  const [difficulty, setDifficulty] = useState<Difficulty>('easy');
-  const [currentSentence, setCurrentSentence] = useState('');
+  const [selectedLesson, setSelectedLesson] = useState<TypingLesson | null>(null);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [currentText, setCurrentText] = useState('');
   const [userInput, setUserInput] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -66,6 +47,11 @@ export default function TypingWizard() {
   const [isComplete, setIsComplete] = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
+  const [currentTargetKey, setCurrentTargetKey] = useState<string>('');
+  
+  // User progress (in real app, this would be stored in database)
+  const [userProgress, setUserProgress] = useState<{ [lessonId: number]: { accuracy: number; wpm: number; completed: boolean } }>({});
 
   // Timer effect
   useEffect(() => {
@@ -117,10 +103,10 @@ export default function TypingWizard() {
     }
   };
 
-  const startGame = () => {
-    const sentencesList = sentences[difficulty];
-    const randomSentence = sentencesList[Math.floor(Math.random() * sentencesList.length)];
-    setCurrentSentence(randomSentence);
+  const startLesson = (lesson: TypingLesson) => {
+    setSelectedLesson(lesson);
+    setCurrentExerciseIndex(0);
+    setCurrentText(lesson.exercises[0]);
     setUserInput('');
     setCurrentIndex(0);
     setErrors(0);
@@ -128,6 +114,7 @@ export default function TypingWizard() {
     setStartTime(Date.now());
     setEndTime(null);
     setTimeElapsed(0);
+    setCurrentTargetKey(lesson.exercises[0][0]);
     setGameState('playing');
     
     // Focus input after a short delay
@@ -138,6 +125,9 @@ export default function TypingWizard() {
 
   const resetGame = () => {
     setGameState('menu');
+    setSelectedLesson(null);
+    setCurrentExerciseIndex(0);
+    setCurrentText('');
     setUserInput('');
     setCurrentIndex(0);
     setErrors(0);
@@ -145,14 +135,52 @@ export default function TypingWizard() {
     setStartTime(null);
     setEndTime(null);
     setTimeElapsed(0);
+    setCurrentTargetKey('');
+    setPressedKeys(new Set());
+  };
+
+  const nextExercise = () => {
+    if (!selectedLesson) return;
+    
+    if (currentExerciseIndex < selectedLesson.exercises.length - 1) {
+      const nextIndex = currentExerciseIndex + 1;
+      setCurrentExerciseIndex(nextIndex);
+      setCurrentText(selectedLesson.exercises[nextIndex]);
+      setUserInput('');
+      setCurrentIndex(0);
+      setErrors(0);
+      setIsComplete(false);
+      setStartTime(Date.now());
+      setEndTime(null);
+      setTimeElapsed(0);
+      setCurrentTargetKey(selectedLesson.exercises[nextIndex][0]);
+      setGameState('playing');
+      
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    } else {
+      // Lesson completed
+      const results = calculateResults();
+      const newProgress = {
+        ...userProgress,
+        [selectedLesson.id]: {
+          accuracy: results.accuracy,
+          wpm: results.wpm,
+          completed: true
+        }
+      };
+      setUserProgress(newProgress);
+      setGameState('results');
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    const currentChar = currentSentence[currentIndex];
+    const currentChar = currentText[currentIndex];
     const inputChar = value[currentIndex];
 
-    if (value.length > currentSentence.length) return;
+    if (value.length > currentText.length) return;
 
     setUserInput(value);
 
@@ -160,15 +188,25 @@ export default function TypingWizard() {
       if (inputChar === currentChar) {
         // Correct character
         playSound(800, 50);
-        setCurrentIndex(currentIndex + 1);
+        const newIndex = currentIndex + 1;
+        setCurrentIndex(newIndex);
         
-        // Check if sentence is complete
-        if (value === currentSentence) {
+        // Update target key for next character
+        if (newIndex < currentText.length) {
+          setCurrentTargetKey(currentText[newIndex]);
+        }
+        
+        // Check if exercise is complete
+        if (value === currentText) {
           setIsComplete(true);
           setEndTime(Date.now());
-          setGameState('results');
           playSound(1000, 200); // Success sound
-          toast.success("🎉 Congratulations! You completed the sentence!");
+          toast.success("🎉 Exercise completed!");
+          
+          // Auto-advance to next exercise after a delay
+          setTimeout(() => {
+            nextExercise();
+          }, 2000);
         }
       } else {
         // Incorrect character
@@ -178,13 +216,36 @@ export default function TypingWizard() {
     }
   };
 
+  // Handle key press for visual feedback
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      setPressedKeys(prev => new Set([...prev, e.key.toLowerCase()]));
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      setPressedKeys(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(e.key.toLowerCase());
+        return newSet;
+      });
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
   const calculateResults = () => {
     if (!startTime || !endTime) return { wpm: 0, accuracy: 0, grade: 'F' };
     
     const timeInMinutes = (endTime - startTime) / 60000;
-    const wordsTyped = currentSentence.split(' ').length;
+    const wordsTyped = currentText.split(' ').length;
     const wpm = Math.round(wordsTyped / timeInMinutes);
-    const accuracy = Math.round(((currentSentence.length - errors) / currentSentence.length) * 100);
+    const accuracy = Math.round(((currentText.length - errors) / currentText.length) * 100);
     
     let grade = 'F';
     if (accuracy >= 95 && wpm >= 40) grade = 'A+';
@@ -197,7 +258,7 @@ export default function TypingWizard() {
   };
 
   const renderCharacter = (char: string, index: number) => {
-    let className = "text-lg font-mono ";
+    let className = "text-lg font-mono px-1 py-0.5 rounded ";
     
     if (index < userInput.length) {
       if (userInput[index] === char) {
@@ -206,7 +267,7 @@ export default function TypingWizard() {
         className += "text-red-600 bg-red-100 dark:bg-red-900/30";
       }
     } else if (index === currentIndex) {
-      className += "bg-primary/20 animate-pulse";
+      className += "bg-primary text-primary-foreground animate-pulse";
     } else {
       className += "text-muted-foreground";
     }
@@ -217,6 +278,8 @@ export default function TypingWizard() {
       </span>
     );
   };
+
+  const unlockedLessons = getUnlockedLessons(userProgress);
 
   return (
     <DashboardLayout userRole={userRole || "student"} userName={userName} photoUrl={photoUrl} onLogout={handleLogout}>
@@ -254,44 +317,35 @@ export default function TypingWizard() {
           </Button>
         </div>
 
-        {/* Game Menu */}
+        {/* Main Menu */}
         {gameState === 'menu' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="hover-scale">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Target className="h-6 w-6 text-primary" />
-                  Select Difficulty
+                  <BookOpen className="h-6 w-6 text-primary" />
+                  Touch Typing Course
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-3">
-                  {[
-                    { level: 'easy', label: 'Beginner', desc: 'Simple words and short sentences' },
-                    { level: 'medium', label: 'Intermediate', desc: 'Longer sentences with common words' },
-                    { level: 'hard', label: 'Advanced', desc: 'Complex sentences and vocabulary' }
-                  ].map(({ level, label, desc }) => (
-                    <Button
-                      key={level}
-                      variant={difficulty === level ? "default" : "outline"}
-                      className="h-auto p-4 text-left justify-start"
-                      onClick={() => setDifficulty(level as Difficulty)}
-                    >
-                      <div>
-                        <div className="font-semibold">{label}</div>
-                        <div className="text-sm text-muted-foreground">{desc}</div>
-                      </div>
-                    </Button>
-                  ))}
-                </div>
+                <p className="text-muted-foreground">
+                  Master touch typing through progressive lessons. Start with home row keys and advance to full keyboard mastery.
+                </p>
                 
-                <div className="flex gap-2">
-                  <Button onClick={() => setGameState('instructions')} className="flex-1 hover-scale">
-                    How to Play
+                <div className="grid gap-3">
+                  <Button onClick={() => setGameState('lesson-select')} className="h-auto p-4 hover-scale">
+                    <div className="flex items-center gap-3">
+                      <Keyboard className="h-8 w-8 text-primary" />
+                      <div className="text-left">
+                        <div className="font-semibold">Start Learning</div>
+                        <div className="text-sm text-muted-foreground">Progressive typing lessons</div>
+                      </div>
+                    </div>
                   </Button>
-                  <Button onClick={startGame} className="flex-1 hover-scale">
-                    <Play className="h-4 w-4 mr-2" />
-                    Start Game
+                  
+                  <Button variant="outline" onClick={() => setGameState('instructions')} className="hover-scale">
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    How to Play
                   </Button>
                 </div>
               </CardContent>
@@ -301,18 +355,18 @@ export default function TypingWizard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Star className="h-6 w-6 text-yellow-500" />
-                  Game Features
+                  Course Features
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex items-start gap-3">
                     <div className="p-2 bg-blue-500/10 rounded-lg">
-                      <Zap className="h-5 w-5 text-blue-600" />
+                      <Keyboard className="h-5 w-5 text-blue-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold">Sound Effects</h4>
-                      <p className="text-sm text-muted-foreground">Fun typing sounds for correct and incorrect keys</p>
+                      <h4 className="font-semibold">Visual Keyboard</h4>
+                      <p className="text-sm text-muted-foreground">Interactive keyboard with finger positioning guide</p>
                     </div>
                   </div>
                   
@@ -321,8 +375,8 @@ export default function TypingWizard() {
                       <Target className="h-5 w-5 text-green-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold">Real-time Feedback</h4>
-                      <p className="text-sm text-muted-foreground">Instant visual feedback as you type</p>
+                      <h4 className="font-semibold">Progressive Learning</h4>
+                      <p className="text-sm text-muted-foreground">Structured lessons from basics to advanced</p>
                     </div>
                   </div>
                   
@@ -331,10 +385,88 @@ export default function TypingWizard() {
                       <Trophy className="h-5 w-5 text-purple-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold">Performance Tracking</h4>
-                      <p className="text-sm text-muted-foreground">Track your WPM, accuracy, and grade</p>
+                      <h4 className="font-semibold">Achievement System</h4>
+                      <p className="text-sm text-muted-foreground">Unlock lessons as you progress</p>
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Lesson Selection */}
+        {gameState === 'lesson-select' && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-6 w-6 text-primary" />
+                  Select a Lesson
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {typingLessons.map((lesson) => {
+                    const isUnlocked = unlockedLessons.includes(lesson.id);
+                    const progress = userProgress[lesson.id];
+                    const isCompleted = progress?.completed || false;
+                    
+                    return (
+                      <Card 
+                        key={lesson.id} 
+                        className={`relative hover-scale ${!isUnlocked ? 'opacity-50' : ''}`}
+                      >
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <Badge variant={lesson.difficulty === 'beginner' ? 'secondary' : lesson.difficulty === 'intermediate' ? 'default' : 'destructive'}>
+                              {lesson.difficulty}
+                            </Badge>
+                            {!isUnlocked && <Lock className="h-4 w-4 text-muted-foreground" />}
+                            {isCompleted && <CheckCircle className="h-4 w-4 text-green-600" />}
+                          </div>
+                          <CardTitle className="text-lg">{lesson.title}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <p className="text-sm text-muted-foreground">{lesson.description}</p>
+                          
+                          <div className="flex flex-wrap gap-1">
+                            {lesson.targetKeys.slice(0, 8).map((key) => (
+                              <Badge key={key} variant="outline" className="text-xs">
+                                {key}
+                              </Badge>
+                            ))}
+                            {lesson.targetKeys.length > 8 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{lesson.targetKeys.length - 8}
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          {progress && (
+                            <div className="text-xs text-muted-foreground">
+                              Best: {progress.accuracy}% accuracy, {progress.wpm} WPM
+                            </div>
+                          )}
+                          
+                          <Button 
+                            className="w-full" 
+                            disabled={!isUnlocked}
+                            onClick={() => startLesson(lesson)}
+                          >
+                            {isCompleted ? 'Practice Again' : 'Start Lesson'}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+                
+                <div className="flex justify-center mt-6">
+                  <Button variant="outline" onClick={() => setGameState('menu')} className="hover-scale">
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Menu
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -347,51 +479,81 @@ export default function TypingWizard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="h-6 w-6 text-primary" />
-                How to Play Typing Wizard
+                How to Use Typing Wizard
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Game Rules:</h3>
+                  <h3 className="font-semibold text-lg">Learning Process:</h3>
                   <div className="space-y-3">
                     <div className="flex items-start gap-3">
                       <Badge className="bg-blue-500/10 text-blue-600">1</Badge>
-                      <p className="text-sm">Type the sentence exactly as shown on screen</p>
+                      <p className="text-sm">Start with home row keys (ASDF JKL;)</p>
                     </div>
                     <div className="flex items-start gap-3">
                       <Badge className="bg-green-500/10 text-green-600">2</Badge>
-                      <p className="text-sm">Green highlights show correct letters</p>
+                      <p className="text-sm">Follow finger positioning guide on keyboard</p>
                     </div>
                     <div className="flex items-start gap-3">
-                      <Badge className="bg-red-500/10 text-red-600">3</Badge>
-                      <p className="text-sm">Red highlights show mistakes</p>
+                      <Badge className="bg-orange-500/10 text-orange-600">3</Badge>
+                      <p className="text-sm">Complete exercises to unlock next lesson</p>
                     </div>
                     <div className="flex items-start gap-3">
                       <Badge className="bg-purple-500/10 text-purple-600">4</Badge>
-                      <p className="text-sm">Complete the sentence to see your results</p>
+                      <p className="text-sm">Progress through all keyboard rows</p>
                     </div>
                   </div>
                 </div>
                 
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Grading System:</h3>
+                  <h3 className="font-semibold text-lg">Visual Feedback:</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 bg-green-100 dark:bg-green-900/30 rounded border"></div>
+                      <span className="text-sm">Correct letters</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 bg-red-100 dark:bg-red-900/30 rounded border"></div>
+                      <span className="text-sm">Incorrect letters</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 bg-primary rounded border animate-pulse"></div>
+                      <span className="text-sm">Current position</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 bg-yellow-200 dark:bg-yellow-900/50 rounded border"></div>
+                      <span className="text-sm">Finger guide colors</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Unlock Requirements:</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">A+ Grade:</span>
-                      <span className="text-sm font-semibold">95%+ accuracy, 40+ WPM</span>
+                    <div className="flex justify-between">
+                      <span>Lesson 1 (Home Row):</span>
+                      <span className="font-semibold">Always unlocked</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">A Grade:</span>
-                      <span className="text-sm font-semibold">90%+ accuracy, 35+ WPM</span>
+                    <div className="flex justify-between">
+                      <span>Lesson 2 (Top Row):</span>
+                      <span className="font-semibold">85% accuracy, 15 WPM</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">B Grade:</span>
-                      <span className="text-sm font-semibold">85%+ accuracy, 30+ WPM</span>
+                    <div className="flex justify-between">
+                      <span>Lesson 3 (Bottom Row):</span>
+                      <span className="font-semibold">80% accuracy, 20 WPM</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">C Grade:</span>
-                      <span className="text-sm font-semibold">80%+ accuracy, 25+ WPM</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Lesson 4 (Numbers):</span>
+                      <span className="font-semibold">80% accuracy, 25 WPM</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Advanced Lessons:</span>
+                      <span className="font-semibold">Higher requirements</span>
                     </div>
                   </div>
                 </div>
@@ -401,9 +563,9 @@ export default function TypingWizard() {
                 <Button variant="outline" onClick={() => setGameState('menu')} className="hover-scale">
                   Back to Menu
                 </Button>
-                <Button onClick={startGame} className="flex-1 hover-scale">
+                <Button onClick={() => setGameState('lesson-select')} className="flex-1 hover-scale">
                   <Play className="h-4 w-4 mr-2" />
-                  Start Playing
+                  Start Learning
                 </Button>
               </div>
             </CardContent>
@@ -411,10 +573,30 @@ export default function TypingWizard() {
         )}
 
         {/* Game Playing */}
-        {gameState === 'playing' && (
+        {gameState === 'playing' && selectedLesson && (
           <div className="space-y-6">
-            {/* Game Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Lesson Info */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <BookOpen className="h-5 w-5 text-primary" />
+                      {selectedLesson.title}
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Exercise {currentExerciseIndex + 1} of {selectedLesson.exercises.length}
+                    </p>
+                  </div>
+                  <Badge variant={selectedLesson.difficulty === 'beginner' ? 'secondary' : selectedLesson.difficulty === 'intermediate' ? 'default' : 'destructive'}>
+                    {selectedLesson.difficulty}
+                  </Badge>
+                </div>
+              </CardHeader>
+            </Card>
+
+            {/* Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2">
@@ -433,7 +615,7 @@ export default function TypingWizard() {
                     <Target className="h-4 w-4 text-green-600" />
                     <div>
                       <p className="text-sm text-muted-foreground">Progress</p>
-                      <p className="text-lg font-bold">{Math.round((currentIndex / currentSentence.length) * 100)}%</p>
+                      <p className="text-lg font-bold">{Math.round((currentIndex / currentText.length) * 100)}%</p>
                     </div>
                   </div>
                 </CardContent>
@@ -454,22 +636,29 @@ export default function TypingWizard() {
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2">
-                    <Star className="h-4 w-4 text-purple-600" />
+                    <Keyboard className="h-4 w-4 text-purple-600" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Difficulty</p>
-                      <p className="text-lg font-bold capitalize">{difficulty}</p>
+                      <p className="text-sm text-muted-foreground">Next Key</p>
+                      <p className="text-lg font-bold">{currentTargetKey || '-'}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
+            {/* Virtual Keyboard */}
+            <VirtualKeyboard 
+              highlightedKey={currentTargetKey}
+              pressedKeys={pressedKeys}
+              showFingerGuide={true}
+            />
+
             {/* Progress Bar */}
             <Card>
               <CardContent className="p-6">
-                <Progress value={(currentIndex / currentSentence.length) * 100} className="mb-4" />
+                <Progress value={(currentIndex / currentText.length) * 100} className="mb-4" />
                 <p className="text-center text-sm text-muted-foreground">
-                  {currentIndex} of {currentSentence.length} characters typed
+                  {currentIndex} of {currentText.length} characters typed
                 </p>
               </CardContent>
             </Card>
@@ -477,12 +666,12 @@ export default function TypingWizard() {
             {/* Typing Area */}
             <Card>
               <CardHeader>
-                <CardTitle>Type the sentence below:</CardTitle>
+                <CardTitle>Type the text below:</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="p-6 bg-muted/50 rounded-lg border-2 border-dashed border-muted-foreground/20">
-                  <div className="text-center leading-relaxed">
-                    {currentSentence.split('').map((char, index) => renderCharacter(char, index))}
+                  <div className="text-center leading-relaxed text-xl">
+                    {currentText.split('').map((char, index) => renderCharacter(char, index))}
                   </div>
                 </div>
                 
@@ -497,9 +686,13 @@ export default function TypingWizard() {
                 />
                 
                 <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setGameState('lesson-select')} className="hover-scale">
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Lessons
+                  </Button>
                   <Button variant="outline" onClick={resetGame} className="hover-scale">
                     <RotateCcw className="h-4 w-4 mr-2" />
-                    Reset
+                    Main Menu
                   </Button>
                 </div>
               </CardContent>
@@ -508,12 +701,12 @@ export default function TypingWizard() {
         )}
 
         {/* Results */}
-        {gameState === 'results' && (
+        {gameState === 'results' && selectedLesson && (
           <Card className="hover-scale">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-center">
                 <Trophy className="h-6 w-6 text-yellow-500" />
-                Typing Wizard Results
+                Lesson Complete!
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -521,8 +714,13 @@ export default function TypingWizard() {
                 <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full text-white text-2xl font-bold mb-4">
                   {calculateResults().grade}
                 </div>
-                <h3 className="text-2xl font-bold mb-2">Congratulations!</h3>
-                <p className="text-muted-foreground">You've completed the typing challenge!</p>
+                <h3 className="text-2xl font-bold mb-2">{selectedLesson.title}</h3>
+                <p className="text-muted-foreground">
+                  {currentExerciseIndex + 1 >= selectedLesson.exercises.length ? 
+                    "Lesson completed!" : 
+                    `Exercise ${currentExerciseIndex + 1} of ${selectedLesson.exercises.length} completed`
+                  }
+                </p>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -550,12 +748,29 @@ export default function TypingWizard() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Unlock notification */}
+              {selectedLesson && 
+               calculateResults().accuracy >= selectedLesson.unlockRequirement.accuracy &&
+               calculateResults().wpm >= selectedLesson.unlockRequirement.wpm && (
+                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-center">
+                  <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
+                  <p className="text-green-600 font-semibold">Requirements met! Next lesson unlocked!</p>
+                </div>
+              )}
               
               <div className="flex gap-2">
-                <Button onClick={startGame} className="flex-1 hover-scale">
-                  <Play className="h-4 w-4 mr-2" />
-                  Play Again
-                </Button>
+                {currentExerciseIndex + 1 < selectedLesson.exercises.length ? (
+                  <Button onClick={nextExercise} className="flex-1 hover-scale">
+                    <Play className="h-4 w-4 mr-2" />
+                    Next Exercise
+                  </Button>
+                ) : (
+                  <Button onClick={() => setGameState('lesson-select')} className="flex-1 hover-scale">
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    Choose Another Lesson
+                  </Button>
+                )}
                 <Button variant="outline" onClick={resetGame} className="hover-scale">
                   <RotateCcw className="h-4 w-4 mr-2" />
                   Main Menu
