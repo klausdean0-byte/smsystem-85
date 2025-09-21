@@ -42,6 +42,7 @@ import Communication from "./pages/Communication";
 import HelpSupport from "./pages/HelpSupport";
 import Library from "./pages/Library";
 import Games from "./pages/Games";
+import TypingWizard from "./pages/games/TypingWizard";
 
 const queryClient = new QueryClient();
 
@@ -168,6 +169,11 @@ const App = () => (
                <Route path="/games" element={
                  <ProtectedRoute>
                    <Games />
+                 </ProtectedRoute>
+               } />
+               <Route path="/games/typing-wizard" element={
+                 <ProtectedRoute>
+                   <TypingWizard />
                  </ProtectedRoute>
                } />
               <Route path="/birthdays" element={

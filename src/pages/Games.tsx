@@ -27,8 +27,8 @@ import { toast } from "sonner";
 const games = [
   {
     id: 1,
-    title: "Math Quiz Challenge",
-    description: "Test your mathematical skills with this engaging quiz game",
+    title: "Typing Wizard",
+    description: "Master the magical art of typing with fun sound effects",
     category: "Educational",
     difficulty: "Medium",
     players: "1-4",
@@ -147,8 +147,12 @@ export default function Games() {
   });
 
   const handlePlayGame = (gameId: number) => {
-    toast.error("Game not available yet - redirecting to 404");
-    navigate("/404");
+    if (gameId === 1) {
+      navigate("/games/typing-wizard");
+    } else {
+      toast.error("Game not available yet - redirecting to 404");
+      navigate("/404");
+    }
   };
 
   const getDifficultyColor = (difficulty: string) => {
