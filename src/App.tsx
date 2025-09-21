@@ -41,6 +41,7 @@ import Birthdays from "./pages/Birthdays";
 import Communication from "./pages/Communication";
 import HelpSupport from "./pages/HelpSupport";
 import Library from "./pages/Library";
+import Games from "./pages/Games";
 
 const queryClient = new QueryClient();
 
@@ -159,11 +160,16 @@ const App = () => (
                   <Attendance />
                 </ProtectedRoute>
               } />
-              <Route path="/hall-of-fame" element={
-                <ProtectedRoute>
-                  <HallOfFame />
-                </ProtectedRoute>
-              } />
+               <Route path="/hall-of-fame" element={
+                 <ProtectedRoute>
+                   <HallOfFame />
+                 </ProtectedRoute>
+               } />
+               <Route path="/games" element={
+                 <ProtectedRoute>
+                   <Games />
+                 </ProtectedRoute>
+               } />
               <Route path="/birthdays" element={
                 <ProtectedRoute>
                   <Birthdays />
