@@ -190,11 +190,12 @@ const App = () => (
                   <HelpSupport />
                 </ProtectedRoute>
               } />
-              <Route path="/library" element={
-                <ProtectedRoute>
-                  <Library />
-                </ProtectedRoute>
-              } />
+               <Route path="/library" element={
+                 <ProtectedRoute>
+                   <Library />
+                 </ProtectedRoute>
+               } />
+               <Route path="/404" element={<NotFound />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
