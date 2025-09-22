@@ -43,6 +43,9 @@ import HelpSupport from "./pages/HelpSupport";
 import Library from "./pages/Library";
 import Games from "./pages/Games";
 import TypingWizard from "./pages/games/TypingWizard";
+import Gallery from "./pages/Gallery";
+import Photos from "./pages/gallery/Photos";
+import Videos from "./pages/gallery/Videos";
 
 const queryClient = new QueryClient();
 
@@ -174,6 +177,21 @@ const App = () => (
                <Route path="/games/typing-wizard" element={
                  <ProtectedRoute>
                    <TypingWizard />
+                 </ProtectedRoute>
+               } />
+               <Route path="/gallery" element={
+                 <ProtectedRoute>
+                   <Gallery />
+                 </ProtectedRoute>
+               } />
+               <Route path="/gallery/photos" element={
+                 <ProtectedRoute>
+                   <Photos />
+                 </ProtectedRoute>
+               } />
+               <Route path="/gallery/videos" element={
+                 <ProtectedRoute>
+                   <Videos />
                  </ProtectedRoute>
                } />
               <Route path="/birthdays" element={

@@ -39,7 +39,8 @@ import {
   GraduationCap,
   Monitor,
   Quote,
-  Gamepad2
+  Gamepad2,
+  Camera
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { AccountVerificationForm } from "@/components/auth/AccountVerificationForm";
@@ -244,6 +245,16 @@ export function StudentDashboard() {
       stats: '3 New Messages',
       action: 'Read Messages',
       route: '/communication'
+    },
+    {
+      id: 'gallery',
+      title: 'Gallery',
+      description: 'Browse photos and videos from events',
+      icon: Camera,
+      color: 'from-pink-400 to-rose-400',
+      stats: '200+ Photos & Videos',
+      action: 'View Gallery',
+      route: '/gallery'
     },
     {
       id: 'help',
